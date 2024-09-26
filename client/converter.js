@@ -16,3 +16,5 @@ console.log("Private Key (Base64):", privateKeyBase64);
 
 const privateKeyHex = Array.from(keypair.secretKey).map(byte => byte.toString(16).padStart(2, '0')).join('');
 console.log("Private Key (Hex):", privateKeyHex);
+
+//Loader
