@@ -16,7 +16,7 @@ declare_id!("EjNJTD8WJDkXqVhrPqEKHnbU1j6kQDJ2Lt4CoutTW9Cs");
 mod token_minter {
     use super::*;
     pub fn init_token(ctx: Context<InitToken>, metadata: InitTokenParams) -> Result<()> {
-        let seeds = &["mint".as_bytes(), &[ctx.bumps.mint]];
+        let seeds = &["mint2".as_bytes(), &[ctx.bumps.mint]];
 
         let signer = [&seeds[..]];
 
@@ -52,7 +52,7 @@ mod token_minter {
     }
 
     pub fn mint_tokens(ctx: Context<MintTokens>, quantity: u64) -> Result<()> {
-        let seeds = &["mint".as_bytes(), &[ctx.bumps.mint]];
+        let seeds = &["mint2".as_bytes(), &[ctx.bumps.mint]];
 
         let signer = [&seeds[..]];
 
@@ -84,7 +84,7 @@ pub struct InitToken<'info> {
     pub metadata: UncheckedAccount<'info>,
     #[account(
         init,
-        seeds = [b"mint"],
+        seeds = [b"mint2"],
         bump,
         payer = payer,
         mint::decimals = params.decimals,
@@ -103,7 +103,7 @@ pub struct InitToken<'info> {
 pub struct MintTokens<'info> {
     #[account(
         mut,
-        seeds = [b"mint"],
+        seeds = [b"mint2"],
         bump,
         mint::authority = mint,
     )]

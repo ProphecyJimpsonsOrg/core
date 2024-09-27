@@ -14,7 +14,7 @@ const __dirname = dirname(__filename);
 // Constants
 const METADATA_SEED = "metadata";
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
-const MINT_SEED = "mint";
+
 const PROGRAM_ID = new PublicKey("EjNJTD8WJDkXqVhrPqEKHnbU1j6kQDJ2Lt4CoutTW9Cs");
 
 // Metadata for the token
@@ -24,6 +24,8 @@ const metadata = {
   uri: "https://example.com/metadata.json",
   decimals: 9,
 };
+
+const MINT_SEED = `mint2`;
 
 // Helper function to create a PublicKey using a seed
 async function findPDA(seed: string, programId: PublicKey) {
@@ -79,7 +81,7 @@ async function initToken(program: anchor.Program, wallet: anchor.Wallet) {
 }
 
 // Mint tokens to the associated account
-async function mintTokens(program: anchor.Program, wallet: anchor.Wallet, quantity: number) {
+async function mintTokens(program: anchor.Program, wallet: anchor.Wallet) {
   const mintPDA = await findPDA(MINT_SEED, program.programId);
   const associatedTokenAccount = await PublicKey.findProgramAddress(
     [
@@ -95,8 +97,14 @@ async function mintTokens(program: anchor.Program, wallet: anchor.Wallet, quanti
   } else {
     console.log("Token account already exists.");
   }
+  
+  // Calculate the amount to mint (1 billion tokens)
+  const oneBillion = new BN(1000000000);
+  const decimalsBN = new BN(10).pow(new BN(metadata.decimals));
+  const amountToMint = oneBillion.mul(decimalsBN);
+
   await program.methods
-    .mintTokens(new BN(quantity * 10 ** metadata.decimals))
+    .mintTokens(amountToMint)
     .accounts({
       mint: mintPDA,
       destination: associatedTokenAccount[0],
@@ -107,7 +115,7 @@ async function mintTokens(program: anchor.Program, wallet: anchor.Wallet, quanti
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
     })
     .rpc();
-  console.log(`${quantity} tokens minted to: ${associatedTokenAccount[0].toString()}`);
+  console.log(`1,000,000,000 tokens minted to: ${associatedTokenAccount[0].toString()}`);
 }
 
 // Main function to initialize and mint tokens
@@ -146,7 +154,7 @@ async function main() {
     console.log("Initializing token...");
     await initToken(program, wallet);
     console.log("Minting tokens...");
-    await mintTokens(program, wallet, 1000000);
+    await mintTokens(program, wallet);
   } catch (error) {
     console.error("Error:", error);
   }
