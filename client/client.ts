@@ -15,7 +15,7 @@ const __dirname = dirname(__filename);
 const METADATA_SEED = "metadata";
 const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 
-const PROGRAM_ID = new PublicKey("EjNJTD8WJDkXqVhrPqEKHnbU1j6kQDJ2Lt4CoutTW9Cs");
+const PROGRAM_ID = new PublicKey("CDSXanmPbW46F8mSpWvC6hvFnqn9hikPcPEKPjWCo7ov");
 
 // Metadata for the token
 const metadata = {

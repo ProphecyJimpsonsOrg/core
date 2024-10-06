@@ -6,10 +6,10 @@ use anchor_spl::{
         create_metadata_accounts_v3, mpl_token_metadata::types::DataV2, CreateMetadataAccountsV3,
         Metadata as Metaplex,
     },
-    token::{mint_to, Mint, MintTo, Token, TokenAccount},
+    token::{mint_to, set_authority, Mint, MintTo, SetAuthority, Token, TokenAccount},
 };
 
-declare_id!("EjNJTD8WJDkXqVhrPqEKHnbU1j6kQDJ2Lt4CoutTW9Cs");
+declare_id!("CDSXanmPbW46F8mSpWvC6hvFnqn9hikPcPEKPjWCo7ov");
 
 // 3. Define the program and instructions
 #[program]
@@ -68,6 +68,22 @@ mod token_minter {
             ),
             quantity,
         )?;
+
+        // Revoke minting authority after the first mint
+        set_authority(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                SetAuthority {
+                    current_authority: ctx.accounts.mint.to_account_info(),
+                    account_or_mint: ctx.accounts.mint.to_account_info(),
+                },
+                &signer,
+            ),
+            anchor_spl::token::spl_token::instruction::AuthorityType::MintTokens,
+            None,
+        )?;
+
+        msg!("Tokens minted and minting authority revoked.");
 
         Ok(())
     }

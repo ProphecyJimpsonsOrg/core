@@ -5,7 +5,7 @@ seeds = false
 skip-lint = false
 
 [programs.devnet]
-pj_final2 = "EjNJTD8WJDkXqVhrPqEKHnbU1j6kQDJ2Lt4CoutTW9Cs"
+pj_final2 = "CDSXanmPbW46F8mSpWvC6hvFnqn9hikPcPEKPjWCo7ov"
 
 [registry]
 url = "https://api.apr.dev"
