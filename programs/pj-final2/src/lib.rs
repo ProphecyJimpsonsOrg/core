@@ -1,149 +1,197 @@
-// 1. Import dependencies
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    metadata::{
-        create_metadata_accounts_v3, mpl_token_metadata::types::DataV2, CreateMetadataAccountsV3,
-        Metadata as Metaplex,
-    },
-    token::{mint_to, set_authority, Mint, MintTo, SetAuthority, Token, TokenAccount},
+    token::{self, Mint, Token, TokenAccount, Transfer},
 };
 
 declare_id!("CDSXanmPbW46F8mSpWvC6hvFnqn9hikPcPEKPjWCo7ov");
 
-// 3. Define the program and instructions
 #[program]
-mod token_minter {
+pub mod presale_program {
     use super::*;
-    pub fn init_token(ctx: Context<InitToken>, metadata: InitTokenParams) -> Result<()> {
-        let seeds = &["mint2".as_bytes(), &[ctx.bumps.mint]];
 
-        let signer = [&seeds[..]];
+    pub fn create_presale(
+        ctx: Context<CreatePresale>,
+        price_per_token: u64,
+        total_tokens: u64,
+        presale_start: i64,
+        presale_end: i64,
+    ) -> Result<()> {
+        let presale = &mut ctx.accounts.presale;
+        presale.admin = ctx.accounts.admin.key();
+        presale.token_mint = ctx.accounts.token_mint.key();
+        presale.price_per_token = price_per_token;
+        presale.total_tokens = total_tokens;
+        presale.tokens_sold = 0;
+        presale.presale_start = presale_start;
+        presale.presale_end = presale_end;
 
-        let token_data: DataV2 = DataV2 {
-            name: metadata.name,
-            symbol: metadata.symbol,
-            uri: metadata.uri,
-            seller_fee_basis_points: 0,
-            creators: None,
-            collection: None,
-            uses: None,
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.admin_token_account.to_account_info(),
+            to: ctx.accounts.presale_token_vault.to_account_info(),
+            authority: ctx.accounts.admin.to_account_info(),
         };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        token::transfer(cpi_ctx, total_tokens)?;
 
-        let metadata_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_metadata_program.to_account_info(),
-            CreateMetadataAccountsV3 {
-                payer: ctx.accounts.payer.to_account_info(),
-                update_authority: ctx.accounts.mint.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                metadata: ctx.accounts.metadata.to_account_info(),
-                mint_authority: ctx.accounts.mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                rent: ctx.accounts.rent.to_account_info(),
-            },
-            &signer,
+        Ok(())
+    }
+
+    pub fn participate(ctx: Context<Participate>, amount: u64) -> Result<()> {
+        let clock = Clock::get()?;
+        let current_time = clock.unix_timestamp;
+
+        require!(
+            current_time >= ctx.accounts.presale.presale_start
+                && current_time <= ctx.accounts.presale.presale_end,
+            PresaleError::PresaleNotActive
         );
 
-        create_metadata_accounts_v3(metadata_ctx, token_data, false, true, None)?;
+        require!(
+            ctx.accounts.presale.tokens_sold + amount <= ctx.accounts.presale.total_tokens,
+            PresaleError::InsufficientTokens
+        );
 
-        msg!("Token mint created successfully.");
+        let total_cost = amount
+            .checked_mul(ctx.accounts.presale.price_per_token)
+            .ok_or(PresaleError::CalculationError)?;
 
-        Ok(())
-    }
-
-    pub fn mint_tokens(ctx: Context<MintTokens>, quantity: u64) -> Result<()> {
-        let seeds = &["mint2".as_bytes(), &[ctx.bumps.mint]];
-
-        let signer = [&seeds[..]];
-
-        mint_to(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                MintTo {
-                    authority: ctx.accounts.mint.to_account_info(),
-                    to: ctx.accounts.destination.to_account_info(),
-                    mint: ctx.accounts.mint.to_account_info(),
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.buyer.to_account_info(),
+                    to: ctx.accounts.admin.to_account_info(),
                 },
-                &signer,
             ),
-            quantity,
+            total_cost,
         )?;
 
-        // Revoke minting authority after the first mint
-        set_authority(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                SetAuthority {
-                    current_authority: ctx.accounts.mint.to_account_info(),
-                    account_or_mint: ctx.accounts.mint.to_account_info(),
-                },
-                &signer,
-            ),
-            anchor_spl::token::spl_token::instruction::AuthorityType::MintTokens,
-            None,
-        )?;
+        let seeds = &[b"presale".as_ref(), &[ctx.bumps.presale]];
+        let signer = &[&seeds[..]];
 
-        msg!("Tokens minted and minting authority revoked.");
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.presale_token_vault.to_account_info(),
+            to: ctx.accounts.buyer_token_account.to_account_info(),
+            authority: ctx.accounts.presale.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+        token::transfer(cpi_ctx, amount)?;
+
+        ctx.accounts.presale.tokens_sold += amount;
+
+        emit!(PresaleParticipation {
+            buyer: *ctx.accounts.buyer.key,
+            amount,
+            total_cost,
+        });
 
         Ok(())
     }
 }
 
-// 4. Define the context for each instruction
 #[derive(Accounts)]
-#[instruction(
-    params: InitTokenParams
-)]
-pub struct InitToken<'info> {
-    /// CHECK: New Metaplex Account being created
+pub struct CreatePresale<'info> {
     #[account(mut)]
-    pub metadata: UncheckedAccount<'info>,
+    pub admin: Signer<'info>,
+
     #[account(
         init,
-        seeds = [b"mint2"],
-        bump,
-        payer = payer,
-        mint::decimals = params.decimals,
-        mint::authority = mint,
+        payer = admin,
+        space = 8 + 32 + 32 + 8 + 8 + 8 + 8,
+        seeds = [b"presale"],
+        bump
     )]
-    pub mint: Account<'info, Mint>,
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub rent: Sysvar<'info, Rent>,
+    pub presale: Account<'info, PresaleConfig>,
+
+    pub token_mint: Account<'info, Mint>,
+
+    #[account(
+        init,
+        payer = admin,
+        associated_token::mint = token_mint,
+        associated_token::authority = presale,
+    )]
+    pub presale_token_vault: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        associated_token::mint = token_mint,
+        associated_token::authority = admin,
+    )]
+    pub admin_token_account: Account<'info, TokenAccount>,
+
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
-    pub token_metadata_program: Program<'info, Metaplex>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
-pub struct MintTokens<'info> {
+pub struct Participate<'info> {
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+
+    #[account(mut)]
+    pub admin: SystemAccount<'info>,
+
     #[account(
         mut,
-        seeds = [b"mint2"],
+        seeds = [b"presale"],
         bump,
-        mint::authority = mint,
     )]
-    pub mint: Account<'info, Mint>,
+    pub presale: Account<'info, PresaleConfig>,
+
+    pub token_mint: Account<'info, Mint>,
+
     #[account(
         init_if_needed,
-        payer = payer,
-        associated_token::mint = mint,
-        associated_token::authority = payer,
+        payer = buyer,
+        associated_token::mint = token_mint,
+        associated_token::authority = buyer,
     )]
-    pub destination: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub rent: Sysvar<'info, Rent>,
+    pub buyer_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        associated_token::mint = token_mint,
+        associated_token::authority = presale,
+    )]
+    pub presale_token_vault: Account<'info, TokenAccount>,
+
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
-// 5. Define the init token params
-#[derive(AnchorSerialize, AnchorDeserialize, Debug, Clone)]
-pub struct InitTokenParams {
-    pub name: String,
-    pub symbol: String,
-    pub uri: String,
-    pub decimals: u8,
+#[account]
+pub struct PresaleConfig {
+    pub admin: Pubkey,
+    pub token_mint: Pubkey,
+    pub price_per_token: u64,
+    pub total_tokens: u64,
+    pub tokens_sold: u64,
+    pub presale_start: i64,
+    pub presale_end: i64,
+}
+
+#[error_code]
+pub enum PresaleError {
+    #[msg("Presale is not active")]
+    PresaleNotActive,
+
+    #[msg("Insufficient tokens available")]
+    InsufficientTokens,
+
+    #[msg("Calculation error")]
+    CalculationError,
+}
+
+#[event]
+pub struct PresaleParticipation {
+    pub buyer: Pubkey,
+    pub amount: u64,
+    pub total_cost: u64,
 }
